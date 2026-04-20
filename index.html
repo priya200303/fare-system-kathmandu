@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>FindMyVehicle KTM</title>
+
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+
+<div class="app">
+
+<h2 class="app-title">🚍 FindMyVehicle KTM</h2>
+
+<div class="searchPanel">
+
+<div class="input-wrapper">
+<div class="flex-row">
+<input id="startInput" placeholder="Start location (type stop or place name)">
+<button id="locBtn">📍 Current</button>
+</div>
+<div id="suggestionsStart" class="suggestions"></div>
+</div>
+
+<div class="input-wrapper">
+<input id="destInput" placeholder="Destination location (type stop or place name)">
+<div id="suggestionsDest" class="suggestions"></div>
+</div>
+
+<button id="searchBtn" class="search-btn">🔍 Search Bus Routes</button>
+
+</div>
+
+<div id="results"></div>
+<div id="map"></div>
+
+</div>
+
+<!-- detail panel -->
+<div id="detailPanel">
+<button onclick="closeDetail()" class="back-arrow">⬅ Back</button>
+<h3>Journey Details</h3>
+<div id="detailContent"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="stops.js"></script>
+<script src="routes.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
