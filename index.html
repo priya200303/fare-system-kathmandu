@@ -1,56 +1,87 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>FindMyVehicle KTM</title>
-
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
 <div class="app">
 
-<h2 class="app-title">🚍 FindMyVehicle KTM</h2>
+  <div class="app-header">
+    <span class="app-logo">🚍</span>
+    <div>
+      <h1 class="app-title">FindMyVehicle KTM</h1>
+      <p class="app-sub">Kathmandu Public Transport Guide</p>
+    </div>
+  </div>
 
-<div class="searchPanel">
+  <div class="searchPanel">
 
-<div class="input-wrapper">
-<div class="flex-row">
-<input id="startInput" placeholder="Start location (type stop or place name)">
-<button id="locBtn">📍 Current</button>
+    <div class="input-wrapper">
+      <label class="input-label">🚩 Start Location</label>
+      <div class="flex-row">
+        <div class="input-inner">
+          <input id="startInput" placeholder="Type stop name or place…" autocomplete="off">
+          <div id="suggestionsStart" class="suggestions"></div>
+        </div>
+        <button id="locBtn" title="Use current location">📍</button>
+      </div>
+    </div>
+
+    <div class="swap-row">
+      <div class="swap-line"></div>
+      <button class="swap-btn" onclick="swapLocations()" title="Swap start and destination">⇅</button>
+      <div class="swap-line"></div>
+    </div>
+
+    <div class="input-wrapper">
+      <label class="input-label">🏁 Destination</label>
+      <div class="input-inner">
+        <input id="destInput" placeholder="Type stop name or place…" autocomplete="off">
+        <div id="suggestionsDest" class="suggestions"></div>
+      </div>
+    </div>
+
+    <button id="searchBtn" class="search-btn">🔍 Find Routes</button>
+
+  </div>
+
+  <div id="results"></div>
+
+  <div id="map"></div>
+
 </div>
-<div id="suggestionsStart" class="suggestions"></div>
-</div>
 
-<div class="input-wrapper">
-<input id="destInput" placeholder="Destination location (type stop or place name)">
-<div id="suggestionsDest" class="suggestions"></div>
-</div>
-
-<button id="searchBtn" class="search-btn">🔍 Search Bus Routes</button>
-
-</div>
-
-<div id="results"></div>
-<div id="map"></div>
-
-</div>
-
-<!-- detail panel -->
+<!-- Detail Panel -->
 <div id="detailPanel">
-<button onclick="closeDetail()" class="back-arrow">⬅ Back</button>
-<h3>Journey Details</h3>
-<div id="detailContent"></div>
+  <div class="detail-header">
+    <button onclick="closeDetail()" class="back-btn">← Back</button>
+    <h3>Journey Details</h3>
+    <span></span>
+  </div>
+  <div id="detailContent"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="stops.js"></script>
 <script src="routes.js"></script>
 <script src="script.js"></script>
+<script>
+function swapLocations() {
+  const tmpCoords = startCoords, tmpVal = startInput.value;
+  startCoords = destCoords; startInput.value = destInput.value;
+  destCoords  = tmpCoords;  destInput.value  = tmpVal;
+  if (startMarker && destMarker) {
+    const tmpLL = startMarker.getLatLng();
+    startMarker.setLatLng(destMarker.getLatLng());
+    destMarker.setLatLng(tmpLL);
+  }
+}
+</script>
 
 </body>
 </html>
