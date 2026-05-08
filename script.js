@@ -330,20 +330,25 @@ function findRoutes(ss, ds, startWalk, endWalk) {
     const b = r.stops.indexOf(ds.id);
     if (a === -1 || b === -1 || a === b) return;
 
-    const from = Math.min(a, b), to = Math.max(a, b);
-    let sl = r.stops.slice(from, to + 1);
-    if (a > b) sl = [...sl].reverse();
+    // Only match if start comes BEFORE destination in this route (correct direction)
+    if (a > b) return;
 
-    const key = r.company + '|' + sl.join('-');
-    if (seenKeys.has(key)) return;
-    seenKeys.add(key);
+    const sl = r.stops.slice(a, b + 1);
+
+    // Dedup key: company + full route corridor (first and last stop of entire route)
+    // This prevents same bus line showing twice even if intermediate stops differ slightly
+    const corridorKey = r.company + '|' + r.stops[0] + '|' + r.stops[r.stops.length - 1];
+    if (seenKeys.has(corridorKey)) return;
+    seenKeys.add(corridorKey);
 
     const busKm = calcBusKmSync(sl);
+    const fullStart = getStopName(r.stops[0]);
+    const fullEnd   = getStopName(r.stops[r.stops.length - 1]);
     found.push({
       type: 'direct',
       company: r.company,
       vehicle: r.vehicle || 'bus',
-      segments: [{ stopList: sl, km: busKm, fare: getFare(busKm) }],
+      segments: [{ stopList: sl, km: busKm, fare: getFare(busKm), fullRouteLabel: `${fullStart} → ${fullEnd}` }],
       startWalk, endWalk,
       startStop: ss, destStop: ds,
       totalFare: getFare(busKm),
@@ -362,6 +367,8 @@ function findRoutes(ss, ds, startWalk, endWalk) {
 
     for (let ti = 0; ti < r1.stops.length; ti++) {
       if (ti === si) continue;
+      // Transfer stop must come AFTER start in r1 (correct direction)
+      if (ti < si) continue;
       const transferId = r1.stops[ti];
 
       routes.forEach(r2 => {
@@ -369,9 +376,26 @@ function findRoutes(ss, ds, startWalk, endWalk) {
         const t2 = r2.stops.indexOf(transferId);
         const di = r2.stops.indexOf(ds.id);
         if (t2 === -1 || di === -1 || t2 === di) return;
+        // Destination must come AFTER transfer stop in r2 (correct direction)
+        if (di < t2) return;
 
-        let seg1 = si < ti ? r1.stops.slice(si, ti+1) : [...r1.stops.slice(ti, si+1)].reverse();
-        let seg2 = t2 < di ? r2.stops.slice(t2, di+1) : [...r2.stops.slice(di, t2+1)].reverse();
+        const seg1 = r1.stops.slice(si, ti + 1);
+        const seg2 = r2.stops.slice(t2, di + 1);
+
+        // Both segments must be meaningful — at least 3 stops each
+        if (seg1.length < 3 || seg2.length < 3) return;
+
+        // Transfer stop must not be the same as start or destination
+        if (transferId === ss.id || transferId === ds.id) return;
+
+        // Reject if first route already passes through the destination
+        // (user would overshoot then come back — bad transfer)
+        const dInR1 = r1.stops.indexOf(ds.id);
+        if (dInR1 !== -1 && dInR1 > si && dInR1 < ti) return;
+
+        // Reject if second segment is shorter than 20% of first segment
+        // (pointless tiny hop after a long ride)
+        if (seg2.length < Math.ceil(seg1.length * 0.2)) return;
 
         const key = seg1.join('-') + '||' + seg2.join('-');
         if (seenKeys.has(key)) return;
@@ -379,14 +403,16 @@ function findRoutes(ss, ds, startWalk, endWalk) {
 
         const km1 = calcBusKmSync(seg1), km2 = calcBusKmSync(seg2);
         const f1 = getFare(km1), f2 = getFare(km2);
+        const r1Start = getStopName(r1.stops[0]), r1End = getStopName(r1.stops[r1.stops.length-1]);
+        const r2Start = getStopName(r2.stops[0]), r2End = getStopName(r2.stops[r2.stops.length-1]);
 
         transferFound.push({
           type: 'transfer',
           company: r1.company + ' → ' + r2.company,
           transferStop: transferId,
           segments: [
-            { stopList: seg1, km: km1, fare: f1, company: r1.company },
-            { stopList: seg2, km: km2, fare: f2, company: r2.company }
+            { stopList: seg1, km: km1, fare: f1, company: r1.company, fullRouteLabel: `${r1Start} → ${r1End}` },
+            { stopList: seg2, km: km2, fare: f2, company: r2.company, fullRouteLabel: `${r2Start} → ${r2End}` }
           ],
           startWalk, endWalk,
           startStop: ss, destStop: ds,
@@ -482,11 +508,15 @@ function openDetail(idx) {
   route.segments.forEach((seg, i) => {
     const company = seg.company || route.company;
     const names = seg.stopList.map(getStopName);
+    const routeTag = seg.fullRouteLabel
+      ? `<div class="route-line-label">${seg.fullRouteLabel}</div>`
+      : '';
     html += `<div class="timeline-item">
       <div class="dot ride"></div>
       <div class="content">
         <strong>🚌 Board at ${names[0]}</strong><br>
-        <small>${company}</small><br>
+        <small>${company}</small>
+        ${routeTag}
         <div class="stop-list">${names.join(' <span class="arrow">›</span> ')}</div>
         <div class="seg-meta">
           <span>🛑 ${seg.stopList.length - 1} stops</span>
@@ -541,34 +571,36 @@ window.closeDetail = function() {
 async function drawRouteLine(route) {
   if (routeLayer) map.removeLayer(routeLayer);
 
-  const coords = [];
-  if (startCoords) coords.push([startCoords[1], startCoords[0]]);
+  // Collect only the bus stop coords (not user start/dest — keeps line clean)
+  const stopCoords = [];
   route.segments.forEach(seg => {
     seg.stopList.forEach(id => {
       const s = stops.find(x => x.id === id);
-      if (s && s.lat && s.lon) coords.push([s.lon, s.lat]);
+      if (s && s.lat && s.lon) stopCoords.push([s.lon, s.lat]);
     });
   });
-  if (destCoords) coords.push([destCoords[1], destCoords[0]]);
-  if (coords.length < 2) return;
+  if (stopCoords.length < 2) return;
 
-  // OSRM driving route for bus path
+  // Limit to 25 waypoints max for OSRM to avoid messy over-snapping
+  const step = Math.ceil(stopCoords.length / 25);
+  const waypoints = stopCoords.filter((_, i) => i % step === 0);
+  if (waypoints[waypoints.length-1] !== stopCoords[stopCoords.length-1]) {
+    waypoints.push(stopCoords[stopCoords.length-1]);
+  }
+
   try {
-    const waypoints = coords.length > 50
-      ? [coords[0], ...coords.slice(1, 49), coords[coords.length-1]]
-      : coords;
-
     const coordStr = waypoints.map(c => `${c[0]},${c[1]}`).join(';');
     const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`);
     if (!res.ok) throw new Error();
     const data = await res.json();
     const path = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-    routeLayer = L.polyline(path, { color: '#1a6ef5', weight: 5, opacity: 0.85 }).addTo(map);
+    routeLayer = L.polyline(path, { color: '#1a6ef5', weight: 4, opacity: 0.9 }).addTo(map);
   } catch {
-    const path = coords.map(c => [c[1], c[0]]);
-    routeLayer = L.polyline(path, { color: '#1a6ef5', weight: 5, dashArray: '10,6', opacity: 0.8 }).addTo(map);
+    const path = stopCoords.map(c => [c[1], c[0]]);
+    routeLayer = L.polyline(path, { color: '#1a6ef5', weight: 4, dashArray: '8,5', opacity: 0.85 }).addTo(map);
   }
 
+  // Show only boarding and alighting stops as markers
   route.segments.forEach(seg => {
     [seg.stopList[0], seg.stopList[seg.stopList.length-1]].forEach(id => {
       const s = stops.find(x => x.id === id);
@@ -577,7 +609,7 @@ async function drawRouteLine(route) {
     });
   });
 
-  map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+  map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
 }
 
 /* =============== WALK MAP – Google Maps navigation =============== */
